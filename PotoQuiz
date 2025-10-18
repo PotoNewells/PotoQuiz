@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PotoQuiz</title>
+  <style>
+    body {
+      background-color: #121212;
+      color: #f0f0f0;
+      font-family: 'Segoe UI', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+    }
+    .container {
+      width: 90%;
+      max-width: 500px;
+      text-align: center;
+    }
+    h1 {
+      color: #ffcc00;
+      font-size: 2rem;
+    }
+    button {
+      background-color: #ffcc00;
+      border: none;
+      border-radius: 10px;
+      padding: 10px 20px;
+      margin: 10px;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #ffd633;
+    }
+    .question {
+      margin-top: 20px;
+      font-size: 1.2rem;
+    }
+    .options button {
+      display: block;
+      width: 100%;
+      margin: 8px 0;
+    }
+    #timer {
+      margin-top: 10px;
+      font-size: 1.1rem;
+      color: #999;
+    }
+    select {
+      margin: 5px;
+      padding: 5px;
+      font-size: 1rem;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>PotoQuiz 🤓</h1>
+    <div id="game"></div>
+  </div>
+<script>
+let temas = {};
+let jugador = '';
+let preguntas = [];
+let indice = 0;
+let puntaje = 0;
+let tiempo = 10;
+let timer;
+let modoTiempo = true;
+let cantidadPreguntas = 5;
+
+const game = document.getElementById('game');
+
+// Cargar Excel directamente desde GitHub RAW
+function cargarExcelGitHub(url) {
+  fetch(url)
+    .then(res => res.arrayBuffer())
+    .then(data => {
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(sheet);
+
+      temas = {};
+      json.forEach(row => {
+        const tema = row['Tema'];
+        if (!temas[tema]) temas[tema] = [];
+        temas[tema].push({
+          q: row['Pregunta'],
+          a: [row['Opción A'], row['Opción B'], row['Opción C'], row['Opción D']],
+          c: ['A','B','C','D'].indexOf(row['Correcta'])
+        });
+      });
+
+      pedirNombre();
+    });
+}
+
+// Función de inicio
+function inicio() {
+  cargarExcelGitHub('https://raw.githubusercontent.com/PotoNewells/PotoQuiz/main/Preguntas.xlsx');
+}
+// Pedir nombre
+function pedirNombre() {
+  game.innerHTML = `<p>Ingresá tu nombre:</p>
+  <input id='nombre' placeholder='Tu nombre' />
+  <button onclick='setJugador()'>Listo</button>`;
+}
+
+function setJugador() {
+  const n = document.getElementById('nombre').value.trim();
+  if (!n) return;
+  jugador = n;
+  configuracionJuego();
+}
+
+// Configuración de juego
+function configuracionJuego() {
+  let html = `<p>Hola <b>${jugador}</b> 👋<br>Elegí modo de juego:</p>`;
+  html += `<label>Modo con temporizador: </label>
+           <select id='modoTiempoSelect'>
+             <option value='true'>Sí</option>
+             <option value='false'>No</option>
+           </select><br>`;
+  html += `<label>Cantidad de preguntas: </label>
+           <select id='cantidadPreguntasSelect'>
+             <option value='5'>5</option>
+             <option value='10'>10</option>
+             <option value='15'>15</option>
+             <option value='all'>Todas</option>
+           </select><br>
+           <button onclick='seleccionarTema()'>Siguiente</button>`;
+  game.innerHTML = html;
+}
+
+// Selección de tema
+function seleccionarTema() {
+  modoTiempo = document.getElementById('modoTiempoSelect').value === 'true';
+  const cant = document.getElementById('cantidadPreguntasSelect').value;
+  cantidadPreguntas = cant === 'all' ? 'all' : parseInt(cant);
+
+  let html = `<p>Elegí un tema:</p>`;
+  html += `<button onclick='empezarJuego("Todas las categorías")'>Todas las categorías</button>`;
+  for (let t in temas) {
+    html += `<button onclick='empezarJuego("${t}")'>${t}</button>`;
+  }
+  game.innerHTML = html;
+}
+
+// Empezar juego
+function empezarJuego(t) {
+  temaSeleccionado = t;
+  preguntas = (t === "Todas las categorías") ? Object.values(temas).flat() : [...temas[t]];
+  preguntas = preguntas.sort(() => 0.5 - Math.random());
+  if (cantidadPreguntas !== 'all') preguntas = preguntas.slice(0, cantidadPreguntas);
+  indice = 0;
+  puntaje = 0;
+  mostrarPregunta();
+}
+
+// Mostrar pregunta
+function mostrarPregunta() {
+  if (indice >= preguntas.length) return mostrarResultado();
+  const p = preguntas[indice];
+  let html = `<div class='question'><b>${p.q}</b></div><div class='options'>`;
+  p.a.forEach((opt, i) => {
+    html += `<button onclick='responder(${i})'>${opt}</button>`;
+  });
+  html += `</div>`;
+  if (modoTiempo) html += `<div id='timer'></div>`;
+  game.innerHTML = html;
+  if (modoTiempo) iniciarTimer();
+}
+
+// Temporizador
+function iniciarTimer() {
+  let t = tiempo;
+  document.getElementById('timer').innerText = `⏱️ ${t}s`;
+  timer = setInterval(() => {
+    t--;
+    if (t <= 0) {
+      clearInterval(timer);
+      siguientePregunta();
+    } else {
+      document.getElementById('timer').innerText = `⏱️ ${t}s`;
+    }
+  }, 1000);
+}
+
+// Responder pregunta
+function responder(i) {
+  if (modoTiempo) clearInterval(timer);
+  if (i === preguntas[indice].c) puntaje += 10;
+  siguientePregunta();
+}
+
+function siguientePregunta() {
+  indice++;
+  if (indice < preguntas.length) mostrarPregunta();
+  else mostrarResultado();
+}
+
+// Mostrar resultado final
+function mostrarResultado() {
+  game.innerHTML = `<h2>¡Fin del juego, ${jugador}! 🎉</h2>
+    <p>Puntaje final: <b>${puntaje}</b></p>
+    <button onclick='configuracionJuego()'>Volver a jugar</button>`;
+}
+
+// Inicializar juego
+inicio();
+</script>
+</body>
+</html>
